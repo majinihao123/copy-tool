@@ -323,7 +323,6 @@ createApp({
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
         theme.value = e.matches ? 'dark' : 'light';
       });
-      await reRegisterDrag();
     });
 
     watch(items,      val => saveItems(val),          { deep: true });
@@ -445,11 +444,45 @@ createApp({
     let savedPos    = null;
     let savedSize   = null;
 
-    async function reRegisterDrag() {
+    // ── window dragging (manual window.move, works reliably on Windows) ────────
+    let winDrag       = null;   // { startX, startY, winX, winY }
+    let winDragActive = false;  // guard: pointerup before getPosition resolves
+    let winRafId      = null;
+    let winLatestX    = 0, winLatestY = 0;
+
+    async function startWindowDrag(e) {
       if (typeof Neutralino === 'undefined') return;
-      await nextTick();
-      try { await Neutralino.window.setDraggableRegion('drag-titlebar'); } catch (e) {}
-      try { await Neutralino.window.setDraggableRegion('drag-header');   } catch (e) {}
+      if (e.button !== 0) return;
+      e.preventDefault();
+      winDragActive = true;
+      const sx = e.screenX, sy = e.screenY;
+      try {
+        const pos = await Neutralino.window.getPosition();
+        if (!winDragActive) return;
+        winDrag = { startX: sx, startY: sy, winX: pos.x, winY: pos.y };
+        winLatestX = sx; winLatestY = sy;
+      } catch(err) {}
+    }
+
+    function onWinPointerMove(e) {
+      if (!winDrag) return;
+      winLatestX = e.screenX; winLatestY = e.screenY;
+      if (!winRafId) {
+        winRafId = requestAnimationFrame(() => {
+          winRafId = null;
+          if (!winDrag) return;
+          Neutralino.window.move(
+            winDrag.winX + winLatestX - winDrag.startX,
+            winDrag.winY + winLatestY - winDrag.startY
+          ).catch(() => {});
+        });
+      }
+    }
+
+    function onWinPointerUp() {
+      winDrag = null;
+      winDragActive = false;
+      if (winRafId) { cancelAnimationFrame(winRafId); winRafId = null; }
     }
 
     async function cycleSize() {
@@ -473,18 +506,13 @@ createApp({
           sizeState.value = 'large';
 
         } else {
-          // restore to small
+          // restore to minimum size
           await Neutralino.window.exitFullScreen();
-          const w = savedSize ? savedSize.width  : 460;
-          const h = savedSize ? savedSize.height : 760;
-          await Neutralino.window.setSize({ width: w, height: h, resizable: true });
+          await Neutralino.window.setSize({ width: 300, height: 420, resizable: true });
           if (savedPos) await Neutralino.window.move(savedPos.x, savedPos.y);
           sizeState.value = 'small';
         }
       } catch (e) {}
-
-      // re-register drag regions after every resize/fullscreen change
-      await reRegisterDrag();
     }
 
     // ── cats horizontal drag-scroll ──────────────────────────────────────────
@@ -539,8 +567,22 @@ createApp({
       }
       drag.value = null;
     }
-    onMounted(() => { window.addEventListener('pointermove', onDragMove); window.addEventListener('pointerup', endDrag); window.addEventListener('pointercancel', endDrag); });
-    onUnmounted(() => { window.removeEventListener('pointermove', onDragMove); window.removeEventListener('pointerup', endDrag); window.removeEventListener('pointercancel', endDrag); });
+    onMounted(() => {
+      window.addEventListener('pointermove', onDragMove);
+      window.addEventListener('pointerup',   endDrag);
+      window.addEventListener('pointercancel', endDrag);
+      window.addEventListener('pointermove', onWinPointerMove);
+      window.addEventListener('pointerup',   onWinPointerUp);
+      window.addEventListener('pointercancel', onWinPointerUp);
+    });
+    onUnmounted(() => {
+      window.removeEventListener('pointermove', onDragMove);
+      window.removeEventListener('pointerup',   endDrag);
+      window.removeEventListener('pointercancel', endDrag);
+      window.removeEventListener('pointermove', onWinPointerMove);
+      window.removeEventListener('pointerup',   onWinPointerUp);
+      window.removeEventListener('pointercancel', onWinPointerUp);
+    });
 
     function regRow(id, el) { if (el) rowEls[id] = el.$el || el; else delete rowEls[id]; }
 
@@ -552,6 +594,7 @@ createApp({
       addCategory, renameCategory, deleteCategory,
       restoreSeed, clearAll, exportJson, minimize, closeApp,
       sizeState, cycleSize,
+      startWindowDrag,
       startDrag, regRow,
       onCatsDragStart, onCatsDragMove, onCatsDragEnd,
     };
@@ -563,7 +606,7 @@ createApp({
 
       <!-- titlebar -->
       <div class="titlebar">
-        <div id="drag-titlebar" class="titlebar-drag"></div>
+        <div id="drag-titlebar" class="titlebar-drag" @pointerdown="startWindowDrag"></div>
         <div class="titlebar-wc">
           <button class="wc-btn wc-close" title="关闭" @click="closeApp"></button>
           <button class="wc-btn wc-min"   title="最小化" @click="minimize"></button>
@@ -575,7 +618,7 @@ createApp({
 
       <!-- header -->
       <header class="hd">
-        <div id="drag-header" class="hd-l">
+        <div id="drag-header" class="hd-l" @pointerdown="startWindowDrag">
           <div class="logo"></div>
           <div>
             <div class="ttl">速贴</div>

@@ -24,6 +24,7 @@
       "maxWidth": 600,
       "maxHeight": 900,
       "resizable": true,
+      "useSavedState": false,
       "borderless": true,
       "alwaysOnTop": false,
       "icon": "/www/icon.png",
