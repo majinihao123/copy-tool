@@ -1,0 +1,41 @@
+{
+  "applicationId": "com.clipdock.app",
+  "version": "1.0.0",
+  "defaultMode": "window",
+  "documentRoot": "/www/",
+  "url": "/",
+  "enableServer": true,
+  "enableNativeAPI": true,
+  "nativeAllowList": [
+    "app.*",
+    "storage.*",
+    "clipboard.*",
+    "window.*",
+    "os.*",
+    "filesystem.*"
+  ],
+  "modes": {
+    "window": {
+      "title": "速贴 · ClipDock",
+      "width": 460,
+      "height": 760,
+      "minWidth": 300,
+      "minHeight": 420,
+      "maxWidth": 600,
+      "maxHeight": 900,
+      "resizable": true,
+      "borderless": true,
+      "alwaysOnTop": false,
+      "icon": "/www/icon.png",
+      "transparent": true
+    }
+  },
+  "cli": {
+    "binaryName": "copy-tool",
+    "resourcesPath": "/www/",
+    "extensionsPath": "/extensions/",
+    "clientLibrary": "/www/neutralino.js",
+    "binaryVersion": "6.7.0",
+    "clientVersion": "6.7.0"
+  }
+}
