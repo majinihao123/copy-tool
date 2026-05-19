@@ -2,6 +2,7 @@ const { createApp, ref, computed, watch, nextTick, onMounted, onUnmounted } = Vu
 
 const STORAGE_KEY      = 'clipdock_items_v1';
 const CATS_KEY         = 'clipdock_cats_v1';
+const WINDOW_SIZE_KEY  = 'clipdock_window_size_v1';
 const DEFAULT_CATS     = ['联系', '话术', '模板', '开发', '链接'];
 
 const SEED = [
@@ -319,6 +320,15 @@ createApp({
 
     onMounted(async () => {
       [items.value, categories.value] = await Promise.all([loadItems(), loadCats()]);
+      if (typeof Neutralino !== 'undefined') {
+        const raw = await storageGet(WINDOW_SIZE_KEY);
+        if (raw) {
+          try {
+            const { width, height } = JSON.parse(raw);
+            await Neutralino.window.setSize({ width, height });
+          } catch(e) {}
+        }
+      }
       if (window.matchMedia('(prefers-color-scheme: dark)').matches) theme.value = 'dark';
       window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', e => {
         theme.value = e.matches ? 'dark' : 'light';
@@ -439,11 +449,6 @@ createApp({
     async function minimize() { try { if (typeof Neutralino !== 'undefined') await Neutralino.window.minimize(); } catch (e) {} }
     async function closeApp() { try { if (typeof Neutralino !== 'undefined') await Neutralino.app.exit(); } catch (e) {} }
 
-    // ── window size cycling: small → medium → large → small ─────────────────
-    const sizeState = ref('small');
-    let savedPos    = null;
-    let savedSize   = null;
-
     // ── window dragging (manual window.move, works reliably on Windows) ────────
     let winDrag       = null;   // { startX, startY, winX, winY }
     let winDragActive = false;  // guard: pointerup before getPosition resolves
@@ -485,34 +490,57 @@ createApp({
       if (winRafId) { cancelAnimationFrame(winRafId); winRafId = null; }
     }
 
-    async function cycleSize() {
+    // ── edge resize ──────────────────────────────────────────────────────────
+    const MIN_W = 300, MIN_H = 420, MAX_W = 600, MAX_H = 900;
+    let resizeDrag    = null;
+    let resizeRafId   = null;
+    let resizePending = null;
+
+    async function startResize(dir, e) {
       if (typeof Neutralino === 'undefined') return;
+      if (e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
       try {
-        if (sizeState.value === 'small') {
-          // save current position & size before changing
-          [savedPos, savedSize] = await Promise.all([
-            Neutralino.window.getPosition(),
-            Neutralino.window.getSize(),
-          ]);
-          // medium: full available height, same x, snap to top of work area
-          const availH = window.screen.availHeight;
-          const availY = window.screen.availTop ?? 0;
-          await Neutralino.window.setSize({ width: savedSize.width, height: availH, resizable: true });
-          await Neutralino.window.move(savedPos.x, availY);
-          sizeState.value = 'medium';
+        const [size, pos] = await Promise.all([Neutralino.window.getSize(), Neutralino.window.getPosition()]);
+        resizeDrag = { dir, startX: e.screenX, startY: e.screenY,
+          startW: size.width, startH: size.height, startWinX: pos.x, startWinY: pos.y };
+      } catch(err) {}
+    }
 
-        } else if (sizeState.value === 'medium') {
-          await Neutralino.window.setFullScreen();
-          sizeState.value = 'large';
+    function onResizeMove(e) {
+      if (!resizeDrag) return;
+      const { dir, startX, startY, startW, startH, startWinX, startWinY } = resizeDrag;
+      const dx = e.screenX - startX, dy = e.screenY - startY;
+      let newW = startW, newH = startH, newX = startWinX, newY = startWinY;
+      if (dir.includes('e')) newW = Math.round(Math.min(MAX_W, Math.max(MIN_W, startW + dx)));
+      if (dir.includes('w')) { newW = Math.round(Math.min(MAX_W, Math.max(MIN_W, startW - dx))); newX = Math.round(startWinX + startW - newW); }
+      if (dir.includes('s')) newH = Math.round(Math.min(MAX_H, Math.max(MIN_H, startH + dy)));
+      if (dir.includes('n')) { newH = Math.round(Math.min(MAX_H, Math.max(MIN_H, startH - dy))); newY = Math.round(startWinY + startH - newH); }
+      resizePending = { dir, newW, newH, newX, newY };
+      if (!resizeRafId) {
+        resizeRafId = requestAnimationFrame(() => {
+          resizeRafId = null;
+          if (!resizePending) return;
+          const { dir: d, newW, newH, newX, newY } = resizePending;
+          resizePending = null;
+          const ops = [Neutralino.window.setSize({ width: newW, height: newH })];
+          if (d.includes('w') || d.includes('n')) ops.push(Neutralino.window.move(newX, newY));
+          Promise.all(ops).catch(() => {});
+        });
+      }
+    }
 
-        } else {
-          // restore to minimum size
-          await Neutralino.window.exitFullScreen();
-          await Neutralino.window.setSize({ width: 300, height: 420, resizable: true });
-          if (savedPos) await Neutralino.window.move(savedPos.x, savedPos.y);
-          sizeState.value = 'small';
+    async function onResizeEnd() {
+      if (!resizeDrag) return;
+      resizeDrag = null;
+      if (resizeRafId) { cancelAnimationFrame(resizeRafId); resizeRafId = null; }
+      resizePending = null;
+      try {
+        if (typeof Neutralino !== 'undefined') {
+          const size = await Neutralino.window.getSize();
+          await storageSet(WINDOW_SIZE_KEY, JSON.stringify({ width: size.width, height: size.height }));
         }
-      } catch (e) {}
+      } catch(err) {}
     }
 
     // ── cats horizontal drag-scroll ──────────────────────────────────────────
@@ -574,6 +602,9 @@ createApp({
       window.addEventListener('pointermove', onWinPointerMove);
       window.addEventListener('pointerup',   onWinPointerUp);
       window.addEventListener('pointercancel', onWinPointerUp);
+      window.addEventListener('pointermove', onResizeMove);
+      window.addEventListener('pointerup',   onResizeEnd);
+      window.addEventListener('pointercancel', onResizeEnd);
     });
     onUnmounted(() => {
       window.removeEventListener('pointermove', onDragMove);
@@ -582,6 +613,9 @@ createApp({
       window.removeEventListener('pointermove', onWinPointerMove);
       window.removeEventListener('pointerup',   onWinPointerUp);
       window.removeEventListener('pointercancel', onWinPointerUp);
+      window.removeEventListener('pointermove', onResizeMove);
+      window.removeEventListener('pointerup',   onResizeEnd);
+      window.removeEventListener('pointercancel', onResizeEnd);
     });
 
     function regRow(id, el) { if (el) rowEls[id] = el.$el || el; else delete rowEls[id]; }
@@ -593,8 +627,7 @@ createApp({
       copyItem, startNew, startEdit, saveEdit, deleteItem, togglePin,
       addCategory, renameCategory, deleteCategory,
       restoreSeed, clearAll, exportJson, minimize, closeApp,
-      sizeState, cycleSize,
-      startWindowDrag,
+      startWindowDrag, startResize,
       startDrag, regRow,
       onCatsDragStart, onCatsDragMove, onCatsDragEnd,
     };
@@ -604,15 +637,22 @@ createApp({
     <div :class="['widget', theme]" :style="{'--accent': accent}"
          @click="menuOpen && (menuOpen=false)">
 
+      <!-- resize handles -->
+      <div class="resize-handle resize-n"  @pointerdown.stop="startResize('n',  $event)"></div>
+      <div class="resize-handle resize-s"  @pointerdown.stop="startResize('s',  $event)"></div>
+      <div class="resize-handle resize-e"  @pointerdown.stop="startResize('e',  $event)"></div>
+      <div class="resize-handle resize-w"  @pointerdown.stop="startResize('w',  $event)"></div>
+      <div class="resize-handle resize-ne" @pointerdown.stop="startResize('ne', $event)"></div>
+      <div class="resize-handle resize-nw" @pointerdown.stop="startResize('nw', $event)"></div>
+      <div class="resize-handle resize-se" @pointerdown.stop="startResize('se', $event)"></div>
+      <div class="resize-handle resize-sw" @pointerdown.stop="startResize('sw', $event)"></div>
+
       <!-- titlebar -->
       <div class="titlebar">
         <div id="drag-titlebar" class="titlebar-drag" @pointerdown="startWindowDrag"></div>
         <div class="titlebar-wc">
           <button class="wc-btn wc-close" title="关闭" @click="closeApp"></button>
           <button class="wc-btn wc-min"   title="最小化" @click="minimize"></button>
-          <button class="wc-btn wc-zoom"
-                  :title="sizeState==='small'?'上下拉满':sizeState==='medium'?'全屏':'还原'"
-                  @click="cycleSize"></button>
         </div>
       </div>
 

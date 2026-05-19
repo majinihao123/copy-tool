@@ -64,7 +64,6 @@ body {
 }
 .wc-close { background: #ff5f57; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.18); }
 .wc-min   { background: #febc2e; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.18); }
-.wc-zoom  { background: #28c840; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.18); }
 .wc-btn:hover { filter: brightness(.88); transform: scale(1.1); }
 .wc-btn:active { transform: scale(.93); }
 
@@ -587,6 +586,22 @@ body {
 }
 .widget.dark .cat-add-input { background: rgba(0,0,0,.25); border-color: rgba(255,255,255,.1); color: inherit; }
 .cat-add-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in oklch, var(--accent) 22%, transparent); }
+
+/* resize handles */
+.resize-handle {
+  position: absolute;
+  z-index: 50;
+  user-select: none;
+  touch-action: none;
+}
+.resize-n  { top: 0;    left: 12px; right: 12px; height: 5px; cursor: ns-resize; }
+.resize-s  { bottom: 0; left: 12px; right: 12px; height: 5px; cursor: ns-resize; }
+.resize-e  { right: 0;  top: 12px; bottom: 12px; width: 5px;  cursor: ew-resize; }
+.resize-w  { left: 0;   top: 12px; bottom: 12px; width: 5px;  cursor: ew-resize; }
+.resize-ne { top: 0;    right: 0;  width: 14px; height: 14px; cursor: nesw-resize; }
+.resize-nw { top: 0;    left: 0;   width: 14px; height: 14px; cursor: nwse-resize; }
+.resize-se { bottom: 0; right: 0;  width: 14px; height: 14px; cursor: nwse-resize; }
+.resize-sw { bottom: 0; left: 0;   width: 14px; height: 14px; cursor: nesw-resize; }
 
 /* compact mode */
 .widget.compact .hd { padding: 10px 12px 6px; }
