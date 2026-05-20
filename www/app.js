@@ -36,16 +36,35 @@ const Icons = {
 };
 
 // ── Storage helpers ──────────────────────────────────────────────────────────
+let _appDataDir = null;
+
+async function initStoragePath() {
+  if (typeof Neutralino === 'undefined') return;
+  try {
+    const home = await Neutralino.os.getPath('home');
+    _appDataDir = home + '/.clipdock';
+    try { await Neutralino.filesystem.createDirectory(_appDataDir); } catch (e) {}
+  } catch (e) {}
+}
+
 async function storageGet(key) {
   try {
-    if (typeof Neutralino !== 'undefined') return await Neutralino.storage.getData(key);
+    if (typeof Neutralino !== 'undefined') {
+      if (_appDataDir) return await Neutralino.filesystem.readFile(_appDataDir + '/' + key + '.json');
+      return await Neutralino.storage.getData(key);
+    }
     return localStorage.getItem(key);
   } catch (e) { return null; }
 }
+
 async function storageSet(key, val) {
   try {
-    if (typeof Neutralino !== 'undefined') await Neutralino.storage.setData(key, val);
-    else localStorage.setItem(key, val);
+    if (typeof Neutralino !== 'undefined') {
+      if (_appDataDir) { await Neutralino.filesystem.writeFile(_appDataDir + '/' + key + '.json', val); return; }
+      await Neutralino.storage.setData(key, val);
+    } else {
+      localStorage.setItem(key, val);
+    }
   } catch (e) {}
 }
 
@@ -319,6 +338,7 @@ createApp({
     let catsDrag       = null;
 
     onMounted(async () => {
+      await initStoragePath();
       [items.value, categories.value] = await Promise.all([loadItems(), loadCats()]);
       if (typeof Neutralino !== 'undefined') {
         const raw = await storageGet(WINDOW_SIZE_KEY);
