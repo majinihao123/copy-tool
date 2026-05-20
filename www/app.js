@@ -3,6 +3,7 @@ const { createApp, ref, computed, watch, nextTick, onMounted, onUnmounted } = Vu
 const STORAGE_KEY      = 'clipdock_items_v1';
 const CATS_KEY         = 'clipdock_cats_v1';
 const WINDOW_SIZE_KEY  = 'clipdock_window_size_v1';
+const WINDOW_POS_KEY   = 'clipdock_window_pos_v1';
 const DEFAULT_CATS     = ['联系', '话术', '模板', '开发', '链接'];
 
 const SEED = [
@@ -35,48 +36,6 @@ const Icons = {
   tag:    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>`,
 };
 
-// ── Tray ─────────────────────────────────────────────────────────────────────
-let _winVisible = true;
-
-async function _setTrayMenu(visible) {
-  if (typeof Neutralino === 'undefined') return;
-  try {
-    await Neutralino.app.setTray({
-      icon: '/www/icon.png',
-      menuItems: [
-        { id: 'TOGGLE', text: visible ? '隐藏窗口' : '显示窗口' },
-        { id: 'SEP',    text: '-' },
-        { id: 'QUIT',   text: '退出' },
-      ]
-    });
-  } catch (e) {}
-}
-
-async function initTray() {
-  if (typeof Neutralino === 'undefined') return;
-  await _setTrayMenu(true);
-  Neutralino.events.on('trayMenuItemClicked', async (evt) => {
-    const id = evt.detail.id;
-    if (id === 'TOGGLE') {
-      if (_winVisible) {
-        await Neutralino.window.hide();
-        _winVisible = false;
-      } else {
-        await Neutralino.window.show();
-        await Neutralino.window.focus();
-        _winVisible = true;
-      }
-      await _setTrayMenu(_winVisible);
-    } else if (id === 'QUIT') {
-      await Neutralino.app.exit();
-    }
-  });
-  Neutralino.events.on('windowClose', async () => {
-    await Neutralino.window.hide();
-    _winVisible = false;
-    await _setTrayMenu(false);
-  });
-}
 
 // ── Storage helpers ──────────────────────────────────────────────────────────
 let _appDataDir = null;
@@ -382,14 +341,29 @@ createApp({
 
     onMounted(async () => {
       await initStoragePath();
-      await initTray();
       [items.value, categories.value] = await Promise.all([loadItems(), loadCats()]);
       if (typeof Neutralino !== 'undefined') {
-        const raw = await storageGet(WINDOW_SIZE_KEY);
-        if (raw) {
+        const rawSize = await storageGet(WINDOW_SIZE_KEY);
+        if (rawSize) {
           try {
-            const { width, height } = JSON.parse(raw);
+            const { width, height } = JSON.parse(rawSize);
             await Neutralino.window.setSize({ width, height });
+          } catch(e) {}
+        }
+        const rawPos = await storageGet(WINDOW_POS_KEY);
+        if (rawPos) {
+          try {
+            const { x, y } = JSON.parse(rawPos);
+            await Neutralino.window.move(x, y);
+          } catch(e) {}
+        } else {
+          try {
+            const size = await Neutralino.window.getSize();
+            const margin = 20;
+            const x = Math.max(0, window.screen.availWidth - size.width - margin);
+            const y = margin;
+            await Neutralino.window.move(x, y);
+            await storageSet(WINDOW_POS_KEY, JSON.stringify({ x, y }));
           } catch(e) {}
         }
       }
@@ -512,13 +486,7 @@ createApp({
 
     async function minimize() { try { if (typeof Neutralino !== 'undefined') await Neutralino.window.minimize(); } catch (e) {} }
     async function closeApp() {
-      try {
-        if (typeof Neutralino !== 'undefined') {
-          await Neutralino.window.hide();
-          _winVisible = false;
-          await _setTrayMenu(false);
-        }
-      } catch (e) {}
+      try { if (typeof Neutralino !== 'undefined') await Neutralino.app.exit(); } catch (e) {}
     }
 
     // ── window dragging (manual window.move, works reliably on Windows) ────────
@@ -556,10 +524,17 @@ createApp({
       }
     }
 
-    function onWinPointerUp() {
+    async function onWinPointerUp() {
+      if (!winDrag) { winDragActive = false; return; }
       winDrag = null;
       winDragActive = false;
       if (winRafId) { cancelAnimationFrame(winRafId); winRafId = null; }
+      try {
+        if (typeof Neutralino !== 'undefined') {
+          const pos = await Neutralino.window.getPosition();
+          await storageSet(WINDOW_POS_KEY, JSON.stringify({ x: pos.x, y: pos.y }));
+        }
+      } catch(e) {}
     }
 
     // ── edge resize ──────────────────────────────────────────────────────────
