@@ -35,6 +35,49 @@ const Icons = {
   tag:    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>`,
 };
 
+// ── Tray ─────────────────────────────────────────────────────────────────────
+let _winVisible = true;
+
+async function _setTrayMenu(visible) {
+  if (typeof Neutralino === 'undefined') return;
+  try {
+    await Neutralino.app.setTray({
+      icon: '/www/icon.png',
+      menuItems: [
+        { id: 'TOGGLE', text: visible ? '隐藏窗口' : '显示窗口' },
+        { id: 'SEP',    text: '-' },
+        { id: 'QUIT',   text: '退出' },
+      ]
+    });
+  } catch (e) {}
+}
+
+async function initTray() {
+  if (typeof Neutralino === 'undefined') return;
+  await _setTrayMenu(true);
+  Neutralino.events.on('trayMenuItemClicked', async (evt) => {
+    const id = evt.detail.id;
+    if (id === 'TOGGLE') {
+      if (_winVisible) {
+        await Neutralino.window.hide();
+        _winVisible = false;
+      } else {
+        await Neutralino.window.show();
+        await Neutralino.window.focus();
+        _winVisible = true;
+      }
+      await _setTrayMenu(_winVisible);
+    } else if (id === 'QUIT') {
+      await Neutralino.app.exit();
+    }
+  });
+  Neutralino.events.on('windowClose', async () => {
+    await Neutralino.window.hide();
+    _winVisible = false;
+    await _setTrayMenu(false);
+  });
+}
+
 // ── Storage helpers ──────────────────────────────────────────────────────────
 let _appDataDir = null;
 
@@ -339,6 +382,7 @@ createApp({
 
     onMounted(async () => {
       await initStoragePath();
+      await initTray();
       [items.value, categories.value] = await Promise.all([loadItems(), loadCats()]);
       if (typeof Neutralino !== 'undefined') {
         const raw = await storageGet(WINDOW_SIZE_KEY);
@@ -467,7 +511,15 @@ createApp({
     }
 
     async function minimize() { try { if (typeof Neutralino !== 'undefined') await Neutralino.window.minimize(); } catch (e) {} }
-    async function closeApp() { try { if (typeof Neutralino !== 'undefined') await Neutralino.app.exit(); } catch (e) {} }
+    async function closeApp() {
+      try {
+        if (typeof Neutralino !== 'undefined') {
+          await Neutralino.window.hide();
+          _winVisible = false;
+          await _setTrayMenu(false);
+        }
+      } catch (e) {}
+    }
 
     // ── window dragging (manual window.move, works reliably on Windows) ────────
     let winDrag       = null;   // { startX, startY, winX, winY }

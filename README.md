@@ -16,6 +16,7 @@
 - **导出 JSON** — 一键导出全部条目
 - **明暗主题** — 自动跟随系统，也可手动切换
 - **可拖移窗口** — 拖动标题栏自由移动
+- **系统托盘** — 关闭窗口后缩至托盘常驻后台，右键可显示/退出
 
 ---
 
@@ -26,7 +27,7 @@
 | 桌面框架 | NeutralinoJS 6.7.0 |
 | 前端框架 | Vue 3（CDN 引入，无构建步骤） |
 | 样式 | 纯 CSS，无第三方 UI 库 |
-| 存储 | Neutralino Storage API / localStorage（浏览器降级） |
+| 存储 | 文件系统（`~/.clipdock/`）/ localStorage（浏览器降级） |
 
 ---
 
@@ -42,8 +43,9 @@ copy-tool/
 │   ├── neutralino.js     # Neutralino 客户端库
 │   └── vue.global.prod.js
 ├── bin/                  # 各平台 Neutralino 运行时
+├── dist/                 # 构建输出目录
 ├── neutralino.config.json
-└── .storage/             # 持久化数据（自动生成）
+└── ~/.clipdock/          # 持久化数据（运行时自动生成，位于用户主目录）
 ```
 
 ---
@@ -71,6 +73,28 @@ copy-tool/
 npm install -g @neutralinojs/neu
 neu run
 ```
+
+---
+
+## 构建与发布
+
+### 一键构建并打包
+
+```bash
+bash build.sh
+```
+
+脚本自动完成：`neu build` 构建 → zip 打包，输出到 `dist/copy-tool-release.zip`。
+
+发布包仅包含两个文件，解压后双击 exe 即可运行：
+
+```
+copy-tool-release.zip
+├── copy-tool-win_x64.exe   # 主程序
+└── resources.neu            # 资源包（须与 exe 同目录）
+```
+
+> 发布包约 1.5 MB，无需安装任何运行时。
 
 ---
 
